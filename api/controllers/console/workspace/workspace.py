@@ -25,7 +25,7 @@ from controllers.console.wraps import (
 from extensions.ext_database import db
 from libs.helper import TimestampField
 from libs.login import login_required
-from models.account import Tenant, TenantStatus
+from models.account import Tenant, TenantAccountJoin, TenantStatus
 from services.account_service import TenantService
 from services.feature_service import FeatureService
 from services.file_service import FileService
@@ -57,6 +57,7 @@ tenants_fields = {
     "status": fields.String,
     "created_at": TimestampField,
     "current": fields.Boolean,
+    "role": fields.String,
 }
 
 workspace_fields = {"id": fields.String, "name": fields.String, "status": fields.String, "created_at": TimestampField}
@@ -72,6 +73,11 @@ class TenantListApi(Resource):
 
         for tenant in tenants:
             features = FeatureService.get_features(tenant.id)
+            # 获取用户在该工作空间的角色
+            join = db.session.query(TenantAccountJoin).filter(
+                TenantAccountJoin.tenant_id == tenant.id,
+                TenantAccountJoin.account_id == current_user.id
+            ).first()
 
             # Create a dictionary with tenant attributes
             tenant_dict = {
@@ -81,6 +87,7 @@ class TenantListApi(Resource):
                 "created_at": tenant.created_at,
                 "plan": features.billing.subscription.plan if features.billing.enabled else "sandbox",
                 "current": tenant.id == current_user.current_tenant_id,
+                "role": join.role if join else 'unknown'
             }
 
             tenant_dicts.append(tenant_dict)
@@ -240,6 +247,90 @@ class WorkspaceInfoApi(Resource):
 
         return {"result": "success", "tenant": marshal(WorkspaceService.get_tenant_info(tenant), tenant_fields)}
 
+class WorkspaceCreateApi(Resource):
+    @login_required
+    @account_initialization_required
+    def post(self):
+        """创建新的工作空间"""
+        parser = reqparse.RequestParser()
+        parser.add_argument('name', type=str, required=True, location='json')
+        args = parser.parse_args()
+
+        try:
+            # 创建新工作空间
+            tenant = TenantService.create_tenant(name=args['name'])
+            # 添加当前用户为工作空间拥有者
+            TenantService.create_tenant_member(tenant, current_user, role="owner")
+
+            # 返回创建的工作空间信息
+            return {
+                'id': tenant.id,
+                'name': tenant.name,
+                'role': 'owner',
+                'status': tenant.status,
+                'created_at': tenant.created_at.isoformat()
+            }, 201
+        except ValueError as e:
+            return {'error': str(e)}, 400
+        except Exception as e:
+            if 'exceed_max_workspaces' in str(e):
+                return {'error': 'exceed the maximum number of workspaces', 'code': str(e)}, 500
+            logging.exception("create workspace failed")
+            return {'error': 'create workspace failed'}, 500
+
+
+class WorkspaceSwitchApi(Resource):
+    @login_required
+    @account_initialization_required
+    def post(self, workspace_id):
+        """switch workspace"""
+        try:
+            # 切换当前工作空间
+            TenantService.switch_tenant(current_user, workspace_id)
+            return {'message': 'switch workspace success'}, 200
+        except Exception as e:
+            logging.exception("switch workspace failed")
+            return {'error': 'switch workspace failed'}, 500
+
+
+class WorkspaceDeleteApi(Resource):
+    @login_required
+    @account_initialization_required
+    def post(self):
+        """删除工作空间"""
+        parser = reqparse.RequestParser()
+        parser.add_argument('workspace_id', type=str, required=True, location='json')
+        args = parser.parse_args()
+
+        try:
+            workspace_id = args['workspace_id']
+
+            # 获取要删除的工作空间
+            workspace = db.session.query(Tenant).filter(Tenant.id == workspace_id).first()
+            if not workspace:
+                return {'error': 'workspace not found'}, 404
+
+            # 检查当前用户是否是工作空间的所有者
+            join = db.session.query(TenantAccountJoin).filter(
+                TenantAccountJoin.tenant_id == workspace_id,
+                TenantAccountJoin.account_id == current_user.id,
+                TenantAccountJoin.role == 'owner'
+            ).first()
+
+            if not join:
+                return {'error': 'only the owner of the workspace can delete the workspace'}, 403
+
+            # 不能删除当前工作空间，需要先切换到其他工作空间
+            if current_user.current_tenant_id == workspace_id:
+                return {'error': 'cannot delete the current workspace, please switch to another workspace first'}, 400
+
+            # 删除工作空间
+            TenantService.dissolve_tenant(workspace, current_user)
+
+            return {'message': 'workspace deleted successfully'}, 200
+        except Exception as e:
+            logging.exception("delete workspace failed")
+            return {'error': 'delete workspace failed'}, 500
 
 api.add_resource(TenantListApi, "/workspaces")  # GET for getting all tenants
 api.add_resource(WorkspaceListApi, "/all-workspaces")  # GET for getting all tenants
@@ -249,3 +340,6 @@ api.add_resource(SwitchWorkspaceApi, "/workspaces/switch")  # POST for switching
 api.add_resource(CustomConfigWorkspaceApi, "/workspaces/custom-config")
 api.add_resource(WebappLogoWorkspaceApi, "/workspaces/custom-config/webapp-logo/upload")
 api.add_resource(WorkspaceInfoApi, "/workspaces/info")  # POST for changing workspace info
+api.add_resource(WorkspaceCreateApi, '/workspaces/create')
+api.add_resource(WorkspaceSwitchApi, '/workspaces/<string:workspace_id>/switch')
+api.add_resource(WorkspaceDeleteApi, '/workspaces/delete')  # POST for deleting workspace

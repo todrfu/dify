@@ -1,3 +1,7 @@
+支持多工作空间、创建、删除、切换工作空间
+
+本功能仅为开源社区的二次开发成果，严格遵循 Dify 原项目的版权许可协议，未涉及原项目许可的多租户功能及 logo 等版权信息。如有相关需求，请直接联系 Dify 官方获取授权与支持
+
 ![cover-v5-optimized](./images/GitHub_README_if.png)
 
 <div align="center">

@@ -152,6 +152,14 @@ export const updateWorkspaceInfo: Fetcher<ICurrentWorkspace, { url: string; body
   return post<ICurrentWorkspace>(url, { body })
 }
 
+export const createWorkspace: Fetcher<CommonResponse & { id: string; name: string; role: string; status: string; created_at: string }, { url: string; body: Record<string, any> }> = ({ url, body }) => {
+  return post<CommonResponse & { id: string; name: string; role: string; status: string; created_at: string }>(url, { body })
+}
+
+export const deleteWorkspace: Fetcher<CommonResponse, { url: string; body: Record<string, any> }> = ({ url, body }) => {
+  return post<CommonResponse>(url, { body })
+}
+
 export const fetchDataSource: Fetcher<{ data: DataSourceNotion[] }, { url: string }> = ({ url }) => {
   return get<{ data: DataSourceNotion[] }>(url)
 }

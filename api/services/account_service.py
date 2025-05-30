@@ -592,6 +592,9 @@ class TenantService:
     @staticmethod
     def create_tenant(name: str, is_setup: Optional[bool] = False, is_from_dashboard: Optional[bool] = False) -> Tenant:
         """Create tenant"""
+        from sqlalchemy import func
+
+        from models.account import TenantAccountJoin
         if (
             not FeatureService.get_system_features().is_allow_create_workspace
             and not is_setup
@@ -600,6 +603,27 @@ class TenantService:
             from controllers.console.error import NotAllowedCreateWorkspace
 
             raise NotAllowedCreateWorkspace()
+
+        # 获取当前用户的 account_id
+        account_id = None
+        try:
+            from flask_login import current_user
+            if current_user and current_user.is_authenticated:
+                account_id = current_user.id
+        except ImportError:
+            pass
+
+        # 如果有当前用户，检查工作空间数量限制
+        if account_id and not is_setup and not is_from_dashboard:
+            # 获取用户已创建的工作空间数量
+            tenant_count = db.session.query(func.count(TenantAccountJoin.tenant_id)).filter(
+                TenantAccountJoin.account_id == account_id
+            ).scalar()
+
+            # 限制每个用户最多创建 3 个工作空间
+            if tenant_count >= 3:
+                raise Exception("exceed_max_workspaces")
+
         tenant = Tenant(name=name)
 
         db.session.add(tenant)
@@ -847,9 +871,16 @@ class TenantService:
     @staticmethod
     def dissolve_tenant(tenant: Tenant, operator: Account) -> None:
         """Dissolve tenant"""
-        if not TenantService.check_member_permission(tenant, operator, operator, "remove"):
+        # if not TenantService.check_member_permission(tenant, operator, operator, "remove"):
+        #     raise NoPermissionError("No permission to dissolve tenant.")
+        # 检查操作者是否是工作空间的所有者
+        ta_operator = db.session.query(TenantAccountJoin).filter_by(tenant_id=tenant.id, account_id=operator.id).first()
+        if not ta_operator or ta_operator.role != 'owner':
             raise NoPermissionError("No permission to dissolve tenant.")
+
+        # 删除所有成员与工作空间的关联
         db.session.query(TenantAccountJoin).filter_by(tenant_id=tenant.id).delete()
+        # 删除工作空间
         db.session.delete(tenant)
         db.session.commit()
 

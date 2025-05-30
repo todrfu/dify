@@ -521,6 +521,7 @@ services:
       redis:
         condition: service_started
     volumes:
+      - ../api:/app/api
       # Mount the storage directory to the container, for storing user files.
       - ./volumes/app/storage:/app/api/storage
     networks:
@@ -548,6 +549,7 @@ services:
       redis:
         condition: service_started
     volumes:
+      - ../api:/app/api 
       # Mount the storage directory to the container, for storing user files.
       - ./volumes/app/storage:/app/api/storage
     networks:
@@ -558,6 +560,8 @@ services:
   web:
     image: langgenius/dify-web:1.4.1
     restart: always
+    volumes:
+      - ../web:/app
     environment:
       CONSOLE_API_URL: ${CONSOLE_API_URL:-}
       APP_API_URL: ${APP_API_URL:-}

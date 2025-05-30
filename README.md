@@ -1,3 +1,7 @@
+Supports multiple workspaces, create, delete, switch workspaces
+
+This feature is solely the result of secondary development in the open-source community and strictly adheres to the copyright license agreement of the original Dify project, not involving the multi-tenant functionality or logo and other copyright information of the original project license. If there are relevant requirements, please contact Dify official directly to obtain authorization and support.
+
 ![cover-v5-optimized](./images/GitHub_README_if.png)
 
 <p align="center">
